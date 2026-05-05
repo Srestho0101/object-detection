@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>DroneVision — Dataset Capture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #13131a;
+    --surface2: #1c1c27;
+    --border: rgba(255,255,255,0.08);
+    --accent: #4fffb0;
+    --accent-dim: rgba(79,255,176,0.15);
+    --accent-border: rgba(79,255,176,0.35);
+    --danger: #ff4f6b;
+    --warn: #ffb74f;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --mono: 'Space Mono', monospace;
+    --sans: 'DM Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow-x: hidden;
+  }
+
+  header {
+    padding: 14px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .logo {
+    font-family: var(--mono);
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    font-weight: 700;
+  }
+
+  .logo span { color: var(--muted); font-weight: 400; }
+
+  #status-pill {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.3s;
+  }
+
+  #status-pill.active {
+    color: var(--accent);
+    border-color: var(--accent-border);
+    background: var(--accent-dim);
+  }
+
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--muted);
+    transition: background 0.3s;
+  }
+
+  #status-pill.active .dot {
+    background: var(--accent);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+
+  main { flex: 1; display: flex; flex-direction: column; padding: 16px; gap: 14px; max-width: 520px; margin: 0 auto; width: 100%; }
+
+  .viewfinder {
+    position: relative;
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    aspect-ratio: 4/3;
+    width: 100%;
+  }
+
+  #video {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scaleX(-1);
+  }
+
+  .corner {
+    position: absolute;
+    width: 18px; height: 18px;
+    border-color: var(--accent);
+    border-style: solid;
+    opacity: 0.7;
+  }
+  .corner.tl { top: 10px; left: 10px; border-width: 2px 0 0 2px; border-radius: 2px 0 0 0; }
+  .corner.tr { top: 10px; right: 10px; border-width: 2px 2px 0 0; border-radius: 0 2px 0 0; }
+  .corner.bl { bottom: 10px; left: 10px; border-width: 0 0 2px 2px; border-radius: 0 0 0 2px; }
+  .corner.br { bottom: 10px; right: 10px; border-width: 0 2px 2px 0; border-radius: 0 0 2px 0; }
+
+  #flash-overlay {
+    position: absolute; inset: 0;
+    background: white;
+    opatapcity: 0;
+    pointer-events: none;
+    transition: opacity 0.05s;
+    border-radius: 12px;
+  }
+
+  #crosshair {
+    position: absolute;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    width: 24px; height: 24px;
+    pointer-events: none;
+    opacity: 0.4;
+  }
+
+  #crosshair::before, #crosshair::after {
+    content: '';
+    position: absolute;
+    background: var(--accent);
+  }
+  #crosshair::before { width: 1px; height: 100%; left: 50%; transform: translateX(-50%); }
+  #crosshair::after  { width: 100%; height: 1px; top: 50%; transform: translateY(-50%); }
+
+  #no-camera {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 8px;
+    color: var(--muted);
+    font-size: 13px;
+    font-family: var(--mono);
+  }
+
+  .cam-icon {
+    width: 40px; height: 40px; opacity: 0.3;
+  }
+
+  #frame-count-overlay {
+    position: absolute;
+    top: 10px; right: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent);
+    background: rgba(0,0,0,0.5);
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--accent-border);
+  }
+
+  .label-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  #label-input {
+    flex: 1;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  #label-input:focus { border-color: var(--accent-border); }
+  #label-input::placeholder { color: var(--muted); }
+
+  .label-suggestions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 10px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+    user-select: none;
+  }
+
+  .chip:hover, .chip.active {
+    border-color: var(--accent-border);
+    color: var(--accent);
+    background: var(--accent-dim);
+  }
+
+  .capture-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  #btn-start {
+    flex: 1;
+    padding: 14px;
+    background: var(--accent-dim);
+    border: 1px solid var(--accent-border);
+    border-radius: 10px;
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: all 0.15s;
+  }
+
+  #btn-start:hover { background: rgba(79,255,176,0.25); }
+  #btn-start:active { transform: scale(0.98); }
+
+  #btn-capture {
+    flex: 1;
+    padding: 14px;
+    background: var(--accent);
+    border: none;
+    border-radius: 10px;
+    color: #0a0a0f;
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.06em;
+    transition: all 0.15s;
+    display: none;
+  }
+
+  #btn-capture:hover { background: #5affc0; }
+  #btn-capture:active { transform: scale(0.97); }
+  #btn-capture:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+  #btn-auto {
+    padding: 14px 16px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    letter-spacing: 0.04em;
+    transition: all 0.15s;
+    display: none;
+    white-space: nowrap;
+  }
+
+  #btn-auto.running {
+    border-color: var(--warn);
+    color: var(--warn);
+    background: rgba(255,183,79,0.1);
+  }
+
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    letter-spacing: 0.06em;
+    margin-bottom: 4px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .stat-value.accent { color: var(--accent); }
+
+  #gallery-section { display: none; }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.1em;
+    margin-bottom: 10px;
+  }
+
+  #gallery {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .thumb-wrap {
+    position: relative;
+    aspect-ratio: 1;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: #000;
+  }
+
+  .thumb-wrap img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .thumb-label {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    background: rgba(0,0,0,0.7);
+    font-family: var(--mono);
+    font-size: 9px;
+    color: var(--accent);
+    padding: 3px 5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .thumb-wrap .del-btn {
+    position: absolute;
+    top: 3px; right: 3px;
+    width: 18px; height: 18px;
+    background: rgba(255,79,107,0.8);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 11px;
+    cursor: pointer;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+  }
+
+  .thumb-wrap:hover .del-btn { display: flex; }
+
+  .export-row {
+    display: flex;
+    gap: 8px;
+  }
+
+  #btn-export, #btn-clear {
+    flex: 1;
+    padding: 11px;
+    border-radius: 8px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.05em;
+    transition: all 0.15s;
+  }
+
+  #btn-export {
+    background: var(--surface2);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
+  }
+
+  #btn-export:hover { background: var(--accent-dim); }
+
+  #btn-clear {
+    background: var(--surface2);
+    border: 1px solid rgba(255,79,107,0.3);
+    color: var(--danger);
+  }
+
+  #btn-clear:hover { background: rgba(255,79,107,0.1); }
+
+  #toast {
+    position: fixed;
+    bottom: 24px; left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    background: var(--surface2);
+    border: 1px solid var(--accent-border);
+    color: var(--accent);
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 10px 20px;
+    border-radius: 99px;
+    pointer-events: none;
+    opacity: 0;
+    transition: all 0.25s;
+    white-space: nowrap;
+    z-index: 999;
+  }
+
+  #toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  canvas { display: none; }
+
+  .hint {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--mono);
+    text-align: center;
+    line-height: 1.6;
+  }
+
+  .hint a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">DRONE<span>VISION</span> <span style="color:#333">//</span> CAPTURE</div>
+  <div id="status-pill">
+    <div class="dot"></div>
+    <span id="status-text">IDLE</span>
+  </div>
+</header>
+
+<main>
+  <div class="viewfinder">
+    <video id="video" autoplay playsinline muted></video>
+    <div id="no-camera">
+      <svg class="cam-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/>
+        <circle cx="12" cy="13" r="4"/>
+      </svg>
+      tap start camera
+    </div>
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+    <div id="crosshair"></div>
+    <div id="frame-count-overlay" style="display:none">0 frames</div>
+    <div id="flash-overlay"></div>
+  </div>
+
+  <div class="label-row">
+    <input id="label-input" type="text" placeholder="object label (e.g. person)" autocomplete="off" autocorrect="off" spellcheck="false">
+  </div>
+
+  <div class="label-suggestions">
+    <div class="chip" onclick="setLabel('person')">person</div>
+    <div class="chip" onclick="setLabel('car')">car</div>
+    <div class="chip" onclick="setLabel('tree')">tree</div>
+    <div class="chip" onclick="setLabel('building')">building</div>
+    <div class="chip" onclick="setLabel('road')">road</div>
+    <div class="chip" onclick="setLabel('drone')">drone</div>
+  </div>
+
+  <div class="capture-row">
+    <button id="btn-start" onclick="startCamera()">[ START CAMERA ]</button>
+    <button id="btn-capture" onclick="captureFrame()">[ CAPTURE ]</button>
+    <button id="btn-auto" onclick="toggleAuto()">AUTO</button>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">CAPTURED</div>
+      <div class="stat-value accent" id="count-total">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">CLASSES</div>
+      <div class="stat-value" id="count-classes">0</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">SESSION</div>
+      <div class="stat-value" id="session-time">0:00</div>
+    </div>
+  </div>
+
+  <div id="gallery-section">
+    <div class="section-title">// CAPTURED FRAMES</div>
+    <div id="gallery"></div>
+    <br>
+    <div class="export-row">
+      <button id="btn-export" onclick="exportDataset()">[ EXPORT ZIP ]</button>
+      <button id="btn-clear" onclick="clearAll()">[ CLEAR ]</button>
+    </div>
+  </div>
+
+  <p class="hint">
+    Capture 50–200 images per class.<br>
+    Vary angles, distance, lighting.<br>
+    <a href="#" onclick="sendHelp()">How many images do I need?</a>
+  </p>
+</main>
+
+<canvas id="canvas"></canvas>
+<div id="toast"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+let stream = null;
+let frames = [];
+let autoInterval = null;
+let sessionStart = null;
+let sessionTimer = null;
+let labelCounts = {};
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 960 } },
+      audio: false
+    });
+    video.srcObject = stream;
+    document.getElementById('no-camera').style.display = 'none';
+    document.getElementById('btn-start').style.display = 'none';
+    document.getElementById('btn-capture').style.display = 'block';
+    document.getElementById('btn-auto').style.display = 'block';
+    document.getElementById('frame-count-overlay').style.display = 'block';
+    const pill = document.getElementById('status-pill');
+    pill.classList.add('active');
+    document.getElementById('status-text').textContent = 'LIVE';
+    sessionStart = Date.now();
+    sessionTimer = setInterval(updateSessionTime, 1000);
+    showToast('Camera ready');
+  } catch (e) {
+    showToast('Camera access denied — check browser permissions');
+  }
+}
+
+function updateSessionTime() {
+  if (!sessionStart) return;
+  const s = Math.floor((Date.now() - sessionStart) / 1000);
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  document.getElementById('session-time').textContent = m + ':' + String(sec).padStart(2, '0');
+}
+
+function captureFrame() {
+  const label = document.getElementById('label-input').value.trim().toLowerCase().replace(/\s+/g, '_') || 'unlabeled';
+  canvas.width = video.videoWidth || 640;
+  canvas.height = video.videoHeight || 480;
+  ctx.drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.92);
+  const id = Date.now();
+  const filename = `${label}_${id}.jpg`;
+
+  frames.push({ id, label, filename, dataUrl });
+  labelCounts[label] = (labelCounts[label] || 0) + 1;
+
+  flashEffect();
+  updateStats();
+  addThumb(dataUrl, label, id);
+  document.getElementById('gallery-section').style.display = 'block';
+}
+
+function flashEffect() {
+  const f = document.getElementById('flash-overlay');
+  f.style.opacity = '1';
+  setTimeout(() => { f.style.opacity = '0'; }, 80);
+}
+
+function toggleAuto() {
+  const btn = document.getElementById('btn-auto');
+  if (autoInterval) {
+    clearInterval(autoInterval);
+    autoInterval = null;
+    btn.classList.remove('running');
+    btn.textContent = 'AUTO';
+    showToast('Auto-capture stopped');
+  } else {
+    autoInterval = setInterval(captureFrame, 800);
+    btn.classList.add('running');
+    btn.textContent = 'STOP';
+    showToast('Auto-capturing every 0.8s');
+  }
+}
+
+function updateStats() {
+  document.getElementById('count-total').textContent = frames.length;
+  document.getElementById('count-classes').textContent = Object.keys(labelCounts).length;
+  document.getElementById('frame-count-overlay').textContent = frames.length + ' frames';
+}
+
+function addThumb(dataUrl, label, id) {
+  const gallery = document.getElementById('gallery');
+  const wrap = document.createElement('div');
+  wrap.className = 'thumb-wrap';
+  wrap.id = 'thumb-' + id;
+  wrap.innerHTML = `<img src="${dataUrl}" loading="lazy"><div class="thumb-label">${label}</div><button class="del-btn" onclick="deleteFrame(${id})">×</button>`;
+  gallery.insertBefore(wrap, gallery.firstChild);
+}
+
+function deleteFrame(id) {
+  frames = frames.filter(f => f.id !== id);
+  const el = document.getElementById('thumb-' + id);
+  if (el) el.remove();
+  labelCounts = {};
+  frames.forEach(f => { labelCounts[f.label] = (labelCounts[f.label] || 0) + 1; });
+  updateStats();
+  if (frames.length === 0) document.getElementById('gallery-section').style.display = 'none';
+}
+
+async function exportDataset() {
+  if (frames.length === 0) { showToast('No frames captured yet'); return; }
+  showToast('Building ZIP...');
+  const zip = new JSZip();
+
+  const byLabel = {};
+  frames.forEach(f => {
+    if (!byLabel[f.label]) byLabel[f.label] = [];
+    byLabel[f.label].push(f);
+  });
+
+  const manifest = { created: new Date().toISOString(), total: frames.length, classes: {} };
+
+  for (const [label, imgs] of Object.entries(byLabel)) {
+    const folder = zip.folder(label);
+    manifest.classes[label] = imgs.length;
+    imgs.forEach((f, i) => {
+      const b64 = f.dataUrl.split(',')[1];
+      folder.file(`${label}_${String(i).padStart(4,'0')}.jpg`, b64, { base64: true });
+    });
+  }
+
+  zip.file('manifest.json', JSON.stringify(manifest, null, 2));
+
+  const readme = `# DroneVision Dataset
+
+Captured: ${new Date().toLocaleDateString()}
+Total images: ${frames.length}
+Classes: ${Object.keys(byLabel).join(', ')}
+
+## Structure
+Each subfolder = one class label.
+Images are JPEG, ~640x480 or higher.
+
+## Next step
+Upload this to Roboflow (roboflow.com) for annotation,
+or use LabelImg locally to draw bounding boxes.
+Then push the annotated dataset to your GitHub repo.
+`;
+  zip.file('README.md', readme);
+
+  const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `dronevision_dataset_${Date.now()}.zip`;
+  a.click();
+  URL.revokeObjectURL(url);
+  showToast(`Exported ${frames.length} images`);
+}
+
+function clearAll() {
+  if (!confirm(`Delete all ${frames.length} captured frames?`)) return;
+  frames = [];
+  labelCounts = {};
+  document.getElementById('gallery').innerHTML = '';
+  document.getElementById('gallery-section').style.display = 'none';
+  updateStats();
+  showToast('Cleared');
+}
+
+function setLabel(val) {
+  document.getElementById('label-input').value = val;
+  document.querySelectorAll('.chip').forEach(c => c.classList.toggle('active', c.textContent === val));
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+
+function sendHelp() {
+  if (typeof sendPrompt === 'function') {
+    sendPrompt('How many training images do I need per class for my CNN drone object detector?');
+  }
+}
+
+document.getElementById('label-input').addEventListener('input', function() {
+  document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+});
+
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space' && stream) { e.preventDefault(); captureFrame(); }
+});
+</script>
+</body>
+</html>
