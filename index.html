@@ -1,294 +1,269 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>Object Detector</title>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-backend-webgl@4.17.0"></script>
-  <style>
-    * { margin:0; padding:0; box-sizing:border-box; }
-    body { 
-      background:#0a0a0a; color:#fff; font-family:system-ui,sans-serif;
-      display:flex; flex-direction:column; align-items:center; 
-      min-height:100vh; padding-bottom:20px;
-    }
-    h1 { 
-      padding:16px 12px; font-size:1.1rem; color:#4ade80; 
-      letter-spacing:0.5px; font-weight:600;
-    }
-    #container { 
-      position:relative; width:100%; max-width:640px; 
-      background:#1a1a1a; border:1px solid #333; border-radius:8px;
-      overflow:hidden;
-    }
-    video, canvas { width:100%; display:block; }
-    canvas { position:absolute; top:0; left:0; }
-    #status { 
-      padding:12px; font-size:0.85rem; color:#888; text-align:center; 
-      background:#111; border-top:1px solid #222;
-    }
-    #fps { 
-      position:absolute; top:8px; right:8px; background:rgba(0,0,0,0.7);
-      padding:4px 8px; border-radius:4px; font-size:0.75rem; 
-      color:#4ade80; border:1px solid #4ade80;
-    }
-    #stats { 
-      padding:12px; font-size:0.8rem; color:#aaa; text-align:center;
-      max-height:80px; overflow-y:auto;
-    }
-    .control-panel {
-      padding:12px; background:#111; border-radius:4px; margin-top:12px;
-      width:100%; max-width:640px;
-    }
-    .slider-group {
-      display:flex; align-items:center; gap:8px; margin-bottom:8px; font-size:0.85rem;
-    }
-    input[type="range"] {
-      flex:1; cursor:pointer;
-    }
-    #confValue, #iouValue {
-      min-width:40px; text-align:right; color:#4ade80;
-    }
-    .info { padding:8px 12px; font-size:0.75rem; color:#666; text-align:center; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Object Detector</title>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{height:100%;background:#0d0d0d;color:#e8e8e8;font:14px/1.5 system-ui,sans-serif;display:flex;flex-direction:column;align-items:center}
+#wrap{position:relative;width:100%;max-width:640px}
+video{width:100%;display:block;background:#111}
+canvas{position:absolute;top:0;left:0;width:100%;height:100%}
+#hud{position:absolute;top:6px;left:6px;display:flex;gap:6px;align-items:center}
+#fps{background:rgba(0,0,0,.65);border:1px solid #4ade80;color:#4ade80;padding:2px 7px;border-radius:4px;font-size:12px}
+#res-badge{background:rgba(0,0,0,.65);border:1px solid #555;color:#aaa;padding:2px 7px;border-radius:4px;font-size:12px}
+#bar{background:#111;border-top:1px solid #1e1e1e;padding:8px 10px;width:100%;max-width:640px}
+#status{font-size:12px;color:#888;text-align:center;padding:4px 0 6px}
+.row{display:flex;align-items:center;gap:8px;margin-bottom:6px;font-size:12px;color:#999}
+.row label{min-width:72px}
+input[type=range]{flex:1;accent-color:#4ade80;cursor:pointer}
+.val{min-width:32px;text-align:right;color:#4ade80;font-size:12px}
+#det-list{font-size:11px;color:#777;padding:2px 0;min-height:16px;text-align:center}
+</style>
 </head>
 <body>
-  <h1>Object Detector (COCO YOLOv8n)</h1>
-  <div id="container">
-    <video id="video" autoplay muted playsinline></video>
-    <canvas id="canvas"></canvas>
-    <div id="fps">-- FPS</div>
+<div id="wrap">
+  <video id="v" autoplay muted playsinline></video>
+  <canvas id="c"></canvas>
+  <div id="hud">
+    <div id="fps">-- fps</div>
+    <div id="res-badge">320</div>
   </div>
+</div>
+<div id="bar">
   <div id="status">Loading model...</div>
-  <div id="stats"></div>
-  
-  <div class="control-panel">
-    <div class="slider-group">
-      <label>Confidence:</label>
-      <input type="range" id="confSlider" min="10" max="95" value="35">
-      <span id="confValue">0.35</span>
-    </div>
-    <div class="slider-group">
-      <label>IoU (NMS):</label>
-      <input type="range" id="iouSlider" min="20" max="95" value="45">
-      <span id="iouValue">0.45</span>
-    </div>
-  </div>
-  
-  <div class="info">
-    📱 Open camera • Allows 80 COCO classes (person, car, dog, etc.)
-  </div>
+  <div class="row"><label>Confidence</label><input type="range" id="sl-conf" min="10" max="90" value="35"><span class="val" id="vconf">0.35</span></div>
+  <div class="row"><label>Resolution</label><input type="range" id="sl-res" min="0" max="2" value="0" step="1"><span class="val" id="vres">320</span></div>
+  <div id="det-list"></div>
+</div>
 
 <script>
-const MODEL_PATH   = './model/tfjs_model/model.json';
-const CLASSES_PATH = './model/classes.json';
-const INPUT_SIZE   = 640;
+const MODEL = './model/tfjs_model/model.json';
+const LABELS = './model/classes.json';
+const SIZES = [320, 416, 640];
+const IOU = 0.45;
 
-let CONF_THRESH = 0.35;
-let IOU_THRESH  = 0.45;
+let model, labels, inputSz = 320, confThresh = 0.35;
+let running = false, rafId = null;
+let lastFpsTime = performance.now(), framesSinceLastFps = 0;
 
-const classColors = {};
-function colorFor(id) {
-  if (!classColors[id]) {
+const vid   = document.getElementById('v');
+const can   = document.getElementById('c');
+const ctx   = can.getContext('2d');
+const stEl  = document.getElementById('status');
+const fpsEl = document.getElementById('fps');
+const resEl = document.getElementById('res-badge');
+const detEl = document.getElementById('det-list');
+
+// ── Persistent offscreen canvas avoids repeated allocation ──
+const offscreen = document.createElement('canvas');
+const offCtx    = offscreen.getContext('2d');
+
+// ── Label colours (stable per class id) ──
+const palette = [];
+function classColor(id) {
+  if (!palette[id]) {
     const h = (id * 137) % 360;
-    const s = 70 + (id % 3) * 10;
-    const l = 50 + (id % 2) * 5;
-    classColors[id] = `hsl(${h},${s}%,${l}%)`;
+    palette[id] = `hsl(${h},75%,55%)`;
   }
-  return classColors[id];
+  return palette[id];
 }
 
-let model, classNames, lastTime = performance.now(), frameCount = 0;
-const video   = document.getElementById('video');
-const canvas  = document.getElementById('canvas');
-const ctx     = canvas.getContext('2d');
-const statusEl = document.getElementById('status');
-const fpsEl   = document.getElementById('fps');
-const statsEl  = document.getElementById('stats');
-const confSlider = document.getElementById('confSlider');
-const iouSlider  = document.getElementById('iouSlider');
-const confValue  = document.getElementById('confValue');
-const iouValue   = document.getElementById('iouValue');
-
-confSlider.addEventListener('change', (e) => {
-  CONF_THRESH = e.target.value / 100;
-  confValue.textContent = CONF_THRESH.toFixed(2);
+// ── Controls ──
+document.getElementById('sl-conf').addEventListener('input', e => {
+  confThresh = e.target.value / 100;
+  document.getElementById('vconf').textContent = confThresh.toFixed(2);
 });
 
-iouSlider.addEventListener('change', (e) => {
-  IOU_THRESH = e.target.value / 100;
-  iouValue.textContent = IOU_THRESH.toFixed(2);
+document.getElementById('sl-res').addEventListener('input', e => {
+  inputSz = SIZES[+e.target.value];
+  document.getElementById('vres').textContent = inputSz;
+  resEl.textContent = inputSz;
+  offscreen.width  = inputSz;
+  offscreen.height = inputSz;
 });
 
+// ── Init ──
 async function init() {
   try {
-    await tf.setBackend('webgl');
-    await tf.ready();
-    statusEl.textContent = 'Loading class names...';
-    classNames = await fetch(CLASSES_PATH).then(r => r.json());
-    statusEl.textContent = `Loading model (${classNames.length} classes)...`;
-    model = await tf.loadGraphModel(MODEL_PATH);
-    statusEl.textContent = 'Starting camera...';
+    // Prefer WebGL, fall back to WASM, then CPU — important for low-end devices
+    for (const backend of ['webgl', 'wasm', 'cpu']) {
+      try {
+        await tf.setBackend(backend);
+        await tf.ready();
+        stEl.textContent = `Backend: ${tf.getBackend()} — loading labels...`;
+        break;
+      } catch(_) {}
+    }
+
+    labels = await fetch(LABELS).then(r => r.json());
+    stEl.textContent = `Loading model (${labels.length} classes)...`;
+    model = await tf.loadGraphModel(MODEL);
+
+    // Warm-up pass so first real frame isn't slow
+    const dummy = tf.zeros([1, inputSz, inputSz, 3]);
+    const warmup = await model.executeAsync(dummy);
+    tf.dispose([dummy, ...(Array.isArray(warmup) ? warmup : [warmup])]);
+
+    stEl.textContent = 'Starting camera...';
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { 
-        facingMode: 'environment', 
-        width: { ideal: 640 }, 
-        height: { ideal: 480 } 
-      }
+      video: { facingMode:'environment', width:{ideal:640}, height:{ideal:480} }
     });
-    video.srcObject = stream;
-    video.onloadedmetadata = () => {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      statusEl.textContent = '🟢 Detecting...';
-      detectLoop();
+    vid.srcObject = stream;
+    vid.onloadedmetadata = () => {
+      can.width  = vid.videoWidth;
+      can.height = vid.videoHeight;
+      offscreen.width  = inputSz;
+      offscreen.height = inputSz;
+      stEl.textContent = 'Detecting...';
+      loop();
     };
-  } catch (err) {
-    statusEl.textContent = '❌ ' + err.message;
+  } catch(err) {
+    stEl.textContent = 'Error: ' + err.message;
     console.error(err);
   }
 }
 
-function preprocess(v) {
-  return tf.tidy(() =>
-    tf.browser.fromPixels(v)
-      .resizeBilinear([INPUT_SIZE, INPUT_SIZE])
-      .div(255.0)
-      .expandDims(0)
-  );
+// ── Detection loop with guard ──
+function loop() {
+  rafId = requestAnimationFrame(async () => {
+    if (running) { loop(); return; }  // skip frame if previous isn't done
+    running = true;
+    try {
+      if (vid.readyState >= 2) {
+        const dets = await detect();
+        draw(dets);
+        updateFps();
+      }
+    } catch(err) {
+      console.error('Detection error:', err);
+    } finally {
+      running = false;
+      loop();
+    }
+  });
 }
 
-function decodeYOLOv8(output, imgW, imgH) {
-  const data = output.dataSync();
-  const nc = classNames.length;
-  const A = 8400;
-  const dets = [];
-  
+// ── Preprocess via offscreen canvas (reuses allocation) ──
+function preprocess() {
+  return tf.tidy(() => {
+    offCtx.drawImage(vid, 0, 0, inputSz, inputSz);
+    return tf.browser.fromPixels(offscreen)
+      .toFloat().div(255)
+      .expandDims(0);
+  });
+}
+
+// ── Run inference ──
+async function detect() {
+  let input, output;
+  try {
+    input  = preprocess();
+    output = await model.executeAsync(input);
+    const tensor = Array.isArray(output) ? output[0] : output;
+    return decodeYOLOv8(tensor);
+  } finally {
+    if (input)  tf.dispose(input);
+    if (output) tf.dispose(Array.isArray(output) ? output : [output]);
+  }
+}
+
+// ── YOLOv8 decoder ──
+function decodeYOLOv8(tensor) {
+  const data = tensor.dataSync();
+  const nc   = labels.length;
+  const A    = tensor.shape[2];    // anchors — 2100 at 320, 8400 at 640
+  const raw  = [];
+
   for (let i = 0; i < A; i++) {
-    const cx = data[0*A + i];
-    const cy = data[1*A + i];
-    const w  = data[2*A + i];
-    const h  = data[3*A + i];
-    
-    let maxConf = 0, classId = 0;
+    const cx = data[0*A+i], cy = data[1*A+i];
+    const w  = data[2*A+i], h  = data[3*A+i];
+    let maxConf = 0, cls = 0;
     for (let c = 0; c < nc; c++) {
-      const conf = data[(4 + c)*A + i];
-      if (conf > maxConf) {
-        maxConf = conf;
-        classId = c;
-      }
+      const s = data[(4+c)*A+i];
+      if (s > maxConf) { maxConf = s; cls = c; }
     }
-    
-    if (maxConf < CONF_THRESH) continue;
-    
-    const x1 = (cx - w/2) / INPUT_SIZE * imgW;
-    const y1 = (cy - h/2) / INPUT_SIZE * imgH;
-    const x2 = (cx + w/2) / INPUT_SIZE * imgW;
-    const y2 = (cy + h/2) / INPUT_SIZE * imgH;
-    
-    dets.push({ x1, y1, x2, y2, conf: maxConf, classId });
+    if (maxConf < confThresh) continue;
+    raw.push({
+      x1: (cx-w/2)/inputSz*can.width,
+      y1: (cy-h/2)/inputSz*can.height,
+      x2: (cx+w/2)/inputSz*can.width,
+      y2: (cy+h/2)/inputSz*can.height,
+      conf: maxConf, cls
+    });
   }
-  
-  return nms(dets);
+  return nms(raw);
 }
 
-function iou(a, b) {
-  const ix1 = Math.max(a.x1, b.x1);
-  const iy1 = Math.max(a.y1, b.y1);
-  const ix2 = Math.min(a.x2, b.x2);
-  const iy2 = Math.min(a.y2, b.y2);
-  
-  const inter = Math.max(0, ix2 - ix1) * Math.max(0, iy2 - iy1);
-  const aArea = (a.x2 - a.x1) * (a.y2 - a.y1);
-  const bArea = (b.x2 - b.x1) * (b.y2 - b.y1);
-  const union = aArea + bArea - inter;
-  
-  return inter / union;
-}
-
+// ── Per-class NMS (bug fix from previous version) ──
 function nms(dets) {
-  dets.sort((a, b) => b.conf - a.conf);
-  const keep = [];
-  const suppressed = new Set();
-  
+  dets.sort((a,b) => b.conf - a.conf);
+  const keep = [], dead = new Uint8Array(dets.length);
   for (let i = 0; i < dets.length; i++) {
-    if (suppressed.has(i)) continue;
+    if (dead[i]) continue;
     keep.push(dets[i]);
-    
-    for (let j = i + 1; j < dets.length; j++) {
-      if (dets[i].classId === dets[j].classId && 
-          iou(dets[i], dets[j]) > IOU_THRESH) {
-        suppressed.add(j);
-      }
+    for (let j = i+1; j < dets.length; j++) {
+      if (dead[j] || dets[i].cls !== dets[j].cls) continue;
+      if (iou(dets[i], dets[j]) > IOU) dead[j] = 1;
     }
   }
-  
   return keep;
 }
 
-function drawBoxes(dets) {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  const detected = {};
-  
+function iou(a,b) {
+  const ix1 = Math.max(a.x1,b.x1), iy1 = Math.max(a.y1,b.y1);
+  const ix2 = Math.min(a.x2,b.x2), iy2 = Math.min(a.y2,b.y2);
+  const inter = Math.max(0,ix2-ix1)*Math.max(0,iy2-iy1);
+  const aA = (a.x2-a.x1)*(a.y2-a.y1), bA = (b.x2-b.x1)*(b.y2-b.y1);
+  return inter/(aA+bA-inter+1e-6);
+}
+
+// ── Draw bounding boxes ──
+function draw(dets) {
+  ctx.clearRect(0, 0, can.width, can.height);
+  const seen = {};
   for (const d of dets) {
-    const label = classNames[d.classId] || `class_${d.classId}`;
-    const color = colorFor(d.classId);
-    
-    // Draw bounding box
+    const lbl   = labels[d.cls] || `cls_${d.cls}`;
+    const color = classColor(d.cls);
+    const bw    = d.x2-d.x1, bh = d.y2-d.y1;
+
     ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(d.x1, d.y1, d.x2 - d.x1, d.y2 - d.y1);
-    
-    // Draw label background
-    const text = `${label} ${(d.conf * 100).toFixed(0)}%`;
-    ctx.font = 'bold 12px system-ui';
-    const metrics = ctx.measureText(text);
-    const tw = metrics.width + 10;
-    
+    ctx.lineWidth   = 1.5;
+    ctx.strokeRect(d.x1, d.y1, bw, bh);
+
+    const txt = `${lbl} ${(d.conf*100).toFixed(0)}%`;
+    ctx.font = 'bold 11px system-ui';
+    const tw  = ctx.measureText(txt).width + 8;
+    const ty  = d.y1 > 18 ? d.y1 - 18 : d.y1 + bh;
+
     ctx.fillStyle = color;
-    ctx.fillRect(d.x1, d.y1 - 22, tw, 22);
-    
-    // Draw label text
+    ctx.fillRect(d.x1, ty, tw, 17);
     ctx.fillStyle = '#000';
-    ctx.fillText(text, d.x1 + 5, d.y1 - 7);
-    
-    // Count detections per class
-    detected[label] = (detected[label] || 0) + 1;
+    ctx.fillText(txt, d.x1+4, ty+12);
+
+    seen[lbl] = (seen[lbl]||0)+1;
   }
-  
-  // Update stats
-  if (dets.length > 0) {
-    const lines = Object.entries(detected)
-      .sort((a, b) => b[1] - a[1])
-      .map(([cls, cnt]) => `${cls}(${cnt})`)
-      .join(' • ');
-    statsEl.textContent = lines;
+
+  if (dets.length) {
+    detEl.textContent = Object.entries(seen)
+      .sort((a,b)=>b[1]-a[1])
+      .map(([k,v])=>`${k}(${v})`).join(' · ');
   } else {
-    statsEl.textContent = '';
+    detEl.textContent = '';
   }
 }
 
-async function detectLoop() {
-  if (video.readyState === 4) {
-    const input = preprocess(video);
-    const output = await model.executeAsync(input);
-    const outTensor = Array.isArray(output) ? output[0] : output;
-    
-    const dets = decodeYOLOv8(outTensor, canvas.width, canvas.height);
-    drawBoxes(dets);
-    
-    tf.dispose([input, ...(Array.isArray(output) ? output : [output])]);
-    
-    frameCount++;
-    const now = performance.now();
-    if (now - lastTime > 1000) {
-      fpsEl.textContent = `${frameCount} FPS`;
-      frameCount = 0;
-      lastTime = now;
-    }
+// ── FPS counter ──
+function updateFps() {
+  framesSinceLastFps++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 1000) {
+    fpsEl.textContent = `${framesSinceLastFps} fps`;
+    framesSinceLastFps = 0;
+    lastFpsTime = now;
   }
-  requestAnimationFrame(detectLoop);
 }
 
 init();
